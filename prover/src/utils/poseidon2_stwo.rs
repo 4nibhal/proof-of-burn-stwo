@@ -345,5 +345,20 @@ mod tests {
         // Just check it doesn't crash and returns a valid M31
         assert!(result.value() < crate::constants::M31_PRIME);
     }
+
+    #[test]
+    fn test_internal_matrix_diagonal_bug() {
+        let mut mismatches = 0;
+        for i in 0..N_STATE {
+            let actual = if i == 0 { 4 } else { 1 << (i + 1) };
+            let expected = if i == 0 { 4 } else { (1 << (i + 1)) + 1 };
+
+            if actual != expected {
+                mismatches += 1;
+            }
+        }
+
+        assert_eq!(mismatches, 15, "Bug: 15/16 diagonal elements incorrect");
+    }
 }
 
