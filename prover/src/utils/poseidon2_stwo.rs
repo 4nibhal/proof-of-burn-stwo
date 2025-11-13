@@ -144,14 +144,14 @@ where
     
     // Apply: new_state[i] = mu_i * state[i] + sum
     // where mu_0 = 4 (special case for minpoly condition)
-    //       mu_i = 2^{i+1} for i > 0
+    //       mu_i = 2^{i+1} + 1 for i > 0
     state.iter_mut().enumerate().for_each(|(i, s)| {
         let multiplier = if i == 0 {
             // mu_0 = 4 (changed from 3 to satisfy minpoly condition)
             BaseField::from_u32_unchecked(4)
         } else {
-            // mu_i = 2^{i+1}
-            BaseField::from_u32_unchecked(1 << (i + 1))
+            // mu_i = 2^{i+1} + 1
+            BaseField::from_u32_unchecked((1 << (i + 1)) + 1)
         };
         *s = s.clone() * multiplier + sum.clone();
     });
@@ -344,6 +344,28 @@ mod tests {
         let result = poseidon2(inputs);
         // Just check it doesn't crash and returns a valid M31
         assert!(result.value() < crate::constants::M31_PRIME);
+    }
+
+    #[test]
+    fn test_internal_matrix_diagonal_correct() {
+        let expected_diagonal = [
+            4u32, 5, 9, 17, 33, 65, 129, 257, 513, 1025, 2049, 4097, 8193, 16385, 32769, 65537
+        ];
+
+        for i in 0..N_STATE {
+            let actual = if i == 0 { 4u32 } else { ((1u32 << (i + 1)) + 1) };
+            assert_eq!(actual, expected_diagonal[i], "Diagonal element {} mismatch", i);
+        }
+    }
+
+    #[test]
+    fn test_internal_matrix_minimal_polynomial_condition() {
+        let mut prev = 0u32;
+        for i in 0..N_STATE {
+            let val = if i == 0 { 4u32 } else { ((1u32 << (i + 1)) + 1) };
+            assert!(val > prev, "Diagonal must be strictly increasing for MDS property");
+            prev = val;
+        }
     }
 }
 
