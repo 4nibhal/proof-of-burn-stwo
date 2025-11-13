@@ -1,0 +1,98 @@
+# Rust build artifacts
+prover/target/
+prover/Cargo.lock
+
+# WebAssembly build artifacts
+pkg/
+prover/wasm-pack.log
+prover/dist/
+prover/build/
+
+# Node.js/npm artifacts (if using for WASM packaging)
+node_modules/
+package-lock.json
+yarn.lock
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# STWO specific artifacts
+stwo_cache/
+stwo_artifacts/
+
+# Test artifacts
+test_output/
+proofs/
+traces/
+
+# Documentation build artifacts
+docs/build/
+docs/.vuepress/dist/
+
+# CI/CD artifacts
+.github/workflows/*.log
+
+# Local development files
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Sage artifacts (for constant generation)
+*.sage.py
+__pycache__/
+*.pyc
+
+# IPFS artifacts
+.ipfs/
+ipfs_artifacts/
+
+# Docker artifacts
+.dockerignore
+
+# Security and keys (never commit)
+*.key
+*.pem
+secrets/
+private/
+
+# Benchmark artifacts
+criterion/
+flamegraph.svg
+
+# Coverage reports
+coverage/
+*.profraw
+*.profdata
+
+# Development notes and temporary files
+TODO.md
+NOTES.md
+scratch/
+experiments/

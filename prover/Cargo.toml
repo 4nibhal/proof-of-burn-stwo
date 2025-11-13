@@ -1,0 +1,62 @@
+[package]
+name = "proof-of-burn-stwo"
+version = "0.1.0"
+edition = "2021"
+authors = ["PoB Contributors"]
+description = "Proof of Burn circuits using Stwo (Circle STARKs) without trusted setup"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "pob-prover"
+path = "src/main.rs"
+
+[dependencies]
+# Stwo prover for Circle STARKs (production-ready)
+stwo-prover = { git = "https://github.com/starkware-libs/stwo", rev = "699ae6e8f014d59749aca058be18b081e44628ea", package = "stwo", features = ["prover"] }
+stwo-constraint-framework = { git = "https://github.com/starkware-libs/stwo", rev = "699ae6e8f014d59749aca058be18b081e44628ea", package = "stwo-constraint-framework", features = ["prover"] }
+
+# Field arithmetic for M31 (keeping as fallback/testing)
+num-bigint = "0.4"
+num-traits = "0.2"
+
+# Ethereum types and utilities
+alloy-primitives = { version = "0.8", features = ["rlp", "serde"] }
+alloy-rlp = "0.3"
+
+# Cryptography
+sha3 = "0.10"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# WebAssembly support
+wasm-bindgen = "0.2"
+console_error_panic_hook = { version = "0.1", optional = true }
+console_log = { version = "1", optional = true }
+log = { version = "0.4", optional = true }
+
+# Utilities
+hex = "0.4"
+itertools = "0.13"
+
+[features]
+default = []
+stwo = []  # Feature flag for when stwo integration is ready
+wasm = ["console_error_panic_hook", "console_log", "log"]  # WebAssembly support
+
+[dev-dependencies]
+criterion = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
