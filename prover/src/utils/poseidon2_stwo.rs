@@ -367,5 +367,25 @@ mod tests {
             prev = val;
         }
     }
+
+    #[test]
+    fn test_poseidon_domain_separation_vulnerability() {
+        let a = BaseField::from_u32_unchecked(12345);
+        let b = BaseField::from_u32_unchecked(67890);
+        let zero = BaseField::from_u32_unchecked(0);
+
+        let hash_2_result = poseidon2_hash_2([a, b]);
+        let hash_3_result = poseidon2_hash_3([a, b, zero]);
+        println!("hash_2([A,B]) = {:?}", hash_2_result);
+        println!("hash_3([A,B,0]) = {:?}", hash_3_result);
+
+        assert_eq!(hash_2_result, hash_3_result,
+            "Domain separation missing: hash_2([A,B]) == hash_3([A,B,0])");
+
+        let hash_4_result = poseidon2_hash_4([a, b, zero, zero]);
+        println!("hash_4([A,B,0,0]) = {:?}", hash_4_result);
+        assert_eq!(hash_2_result, hash_4_result,
+            "Domain separation missing: hash_2([A,B]) == hash_4([A,B,0,0])");
+    }
 }
 
