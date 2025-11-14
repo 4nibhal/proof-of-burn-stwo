@@ -204,23 +204,32 @@ pub fn poseidon2_permutation(state: [BaseField; N_STATE]) -> [BaseField; N_STATE
     result
 }
 
-/// Poseidon2 hash for 2 inputs (rate 2, capacity 14 for security)
-pub fn poseidon2_hash_2(inputs: [BaseField; 2]) -> BaseField {
+/// Generic Poseidon2 hash with domain separation
+fn poseidon2_hash_n_with_domain(inputs: &[BaseField], domain_id: u32) -> BaseField {
     let mut state = [BaseField::from_u32_unchecked(0); N_STATE];
-    state[0] = inputs[0];
-    state[1] = inputs[1];
+
+    for (i, input) in inputs.iter().enumerate() {
+        if i < N_STATE {
+            state[i] = *input;
+        }
+    }
+
+    if inputs.len() < N_STATE {
+        state[inputs.len()] = BaseField::from_u32_unchecked(domain_id);
+    }
+
     poseidon2_permutation_inplace(&mut state);
     state[0]
 }
 
-/// Poseidon2 hash for 3 inputs
+/// Poseidon2 hash for 2 inputs with domain separation
+pub fn poseidon2_hash_2(inputs: [BaseField; 2]) -> BaseField {
+    poseidon2_hash_n_with_domain(&inputs, 2)
+}
+
+/// Poseidon2 hash for 3 inputs with domain separation
 pub fn poseidon2_hash_3(inputs: [BaseField; 3]) -> BaseField {
-    let mut state = [BaseField::from_u32_unchecked(0); N_STATE];
-    state[0] = inputs[0];
-    state[1] = inputs[1];
-    state[2] = inputs[2];
-    poseidon2_permutation_inplace(&mut state);
-    state[0]
+    poseidon2_hash_n_with_domain(&inputs, 3)
 }
 
 /// Compute critical states for Poseidon2 verification
@@ -253,15 +262,10 @@ pub fn poseidon2_critical_states(input_state: [BaseField; N_STATE]) -> ([BaseFie
     (initial_state, after_first_round, final_result)
 }
 
-/// Poseidon2 hash for 4 inputs
+/// Poseidon2 hash for 4 inputs with domain separation
+
 pub fn poseidon2_hash_4(inputs: [BaseField; 4]) -> BaseField {
-    let mut state = [BaseField::from_u32_unchecked(0); N_STATE];
-    state[0] = inputs[0];
-    state[1] = inputs[1];
-    state[2] = inputs[2];
-    state[3] = inputs[3];
-    poseidon2_permutation_inplace(&mut state);
-    state[0]
+    poseidon2_hash_n_with_domain(&inputs, 4)
 }
 
 /// Convert between stwo's BaseField and our custom M31
@@ -366,6 +370,52 @@ mod tests {
             assert!(val > prev, "Diagonal must be strictly increasing for MDS property");
             prev = val;
         }
+    }
+
+    #[test]
+    fn test_poseidon_domain_separation() {
+        let a = BaseField::from_u32_unchecked(12345);
+        let b = BaseField::from_u32_unchecked(67890);
+        let zero = BaseField::from_u32_unchecked(0);
+
+        let hash_2_result = poseidon2_hash_2([a, b]);
+        let hash_3_result = poseidon2_hash_3([a, b, zero]);
+
+        assert_ne!(hash_2_result, hash_3_result,
+            "Domain separation working: hash_2([A,B]) ≠ hash_3([A,B,0])");
+
+        let hash_4_result = poseidon2_hash_4([a, b, zero, zero]);
+        assert_ne!(hash_2_result, hash_4_result,
+            "Domain separation working: hash_2([A,B]) ≠ hash_4([A,B,0,0])");
+
+        assert_ne!(hash_3_result, hash_4_result,
+            "Domain separation working: hash_3([A,B,0]) ≠ hash_4([A,B,0,0])");
+    }
+
+    #[test]
+    fn test_poseidon_domain_separation_consistency() {
+        let a = BaseField::from_u32_unchecked(111);
+        let b = BaseField::from_u32_unchecked(222);
+        let c = BaseField::from_u32_unchecked(333);
+
+        assert_eq!(
+            poseidon2_hash_2([a, b]),
+            poseidon2_hash_2([a, b]),
+            "Same inputs should produce same output"
+        );
+
+        assert_eq!(
+            poseidon2_hash_3([a, b, c]),
+            poseidon2_hash_3([a, b, c]),
+            "Same inputs should produce same output"
+        );
+
+        let zero = BaseField::from_u32_unchecked(0);
+        assert_ne!(
+            poseidon2_hash_2([a, b]),
+            poseidon2_hash_3([a, b, zero]),
+            "Different domain IDs ensure different outputs"
+        );
     }
 }
 
