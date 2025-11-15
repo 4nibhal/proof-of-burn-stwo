@@ -106,7 +106,8 @@ pub fn prove_proof_of_burn(
     tree_builder.commit(channel);
     
     // === Phase 4: Generate and commit main execution trace ===
-    let (trace, lookup_data) = generate_pob_trace(log_n_rows, inputs);
+    let (trace, lookup_data) = generate_pob_trace(log_n_rows, inputs)
+        .map_err(|e| anyhow::anyhow!("Trace generation failed: {}", e))?;
     let mut tree_builder = commitment_scheme.tree_builder();
     tree_builder.extend_evals(trace);
     tree_builder.commit(channel);

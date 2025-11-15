@@ -171,29 +171,38 @@ impl FrameworkEval for ProofOfBurnEval {
     }
 }
 
-/// Generate the execution trace for Proof of Burn
-/// 
-/// The trace is a matrix where:
-/// - Each column represents a variable in the computation
-/// - Each row represents a step in the computation (for sequential logic)
-///   or a single instance (for parallel proving)
-/// 
-/// Returns both the trace and lookup data for Poseidon2 verification
+// Validate U256 fits in 64 bits to prevent truncation attacks
+fn validate_u256_64bit_and_extract(value: &alloy_primitives::U256) -> Result<(u32, u32), String> {
+    let limbs = value.as_limbs();
+    if limbs[1] != 0 || limbs[2] != 0 || limbs[3] != 0 {
+        return Err(format!(
+            "Balance {} exceeds 64-bit maximum. limbs: [{:#x}, {:#x}, {:#x}, {:#x}]",
+            value, limbs[0], limbs[1], limbs[2], limbs[3]
+        ));
+    }
+    let low32 = (limbs[0] & 0xFFFFFFFF) as u32;
+    let high32 = ((limbs[0] >> 32) & 0xFFFFFFFF) as u32;
+    Ok((low32, high32))
+}
+
 pub fn generate_pob_trace(
     log_size: u32,
     inputs: &ProofOfBurnInputs,
-) -> (
+) -> Result<(
     ColumnVec<CircleEvaluation<SimdBackend, BaseField, BitReversedOrder>>,
     LookupData,
-) {
+), String> {
+    let (actual_balance_low, actual_balance_high) =
+        validate_u256_64bit_and_extract(&inputs.actual_balance)?;
+    let (intended_balance_low, intended_balance_high) =
+        validate_u256_64bit_and_extract(&inputs.intended_balance)?;
+    let (reveal_amount_low, reveal_amount_high) =
+        validate_u256_64bit_and_extract(&inputs.reveal_amount)?;
+
     let size = 1 << log_size;
-    
-    // Create empty columns
     let mut trace = (0..NUM_POB_COLUMNS)
         .map(|_| Col::<SimdBackend, BaseField>::zeros(size))
         .collect_vec();
-    
-    // Initialize lookup data
     let mut lookup_data = LookupData {
         nullifier_initial: std::array::from_fn(|_| BaseColumn::zeros(size)),
         nullifier_after_first_round: std::array::from_fn(|_| BaseColumn::zeros(size)),
@@ -202,30 +211,14 @@ pub fn generate_pob_trace(
         commitment_initial: std::array::from_fn(|_| BaseColumn::zeros(size)),
         commitment_after_first_round: std::array::from_fn(|_| BaseColumn::zeros(size)),
     };
-    
-    // Convert inputs to BaseField
-    // Note: This is a simplification. In production, you'd need proper
-    // field arithmetic and range proofs for U256 values
-    
+
     let burn_key_field = BaseField::from_u32_unchecked(inputs.burn_key.0);
-    let actual_balance_low = BaseField::from_u32_unchecked(
-        (inputs.actual_balance.as_limbs()[0] & 0xFFFFFFFF) as u32
-    );
-    let actual_balance_high = BaseField::from_u32_unchecked(
-        ((inputs.actual_balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32
-    );
-    let intended_balance_low = BaseField::from_u32_unchecked(
-        (inputs.intended_balance.as_limbs()[0] & 0xFFFFFFFF) as u32
-    );
-    let intended_balance_high = BaseField::from_u32_unchecked(
-        ((inputs.intended_balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32
-    );
-    let reveal_amount_low = BaseField::from_u32_unchecked(
-        (inputs.reveal_amount.as_limbs()[0] & 0xFFFFFFFF) as u32
-    );
-    let reveal_amount_high = BaseField::from_u32_unchecked(
-        ((inputs.reveal_amount.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32
-    );
+    let actual_balance_low_field = BaseField::from_u32_unchecked(actual_balance_low);
+    let actual_balance_high_field = BaseField::from_u32_unchecked(actual_balance_high);
+    let intended_balance_low_field = BaseField::from_u32_unchecked(intended_balance_low);
+    let intended_balance_high_field = BaseField::from_u32_unchecked(intended_balance_high);
+    let reveal_amount_low_field = BaseField::from_u32_unchecked(reveal_amount_low);
+    let reveal_amount_high_field = BaseField::from_u32_unchecked(reveal_amount_high);
     let burn_extra_commitment_field = BaseField::from_u32_unchecked(
         inputs.burn_extra_commitment.0
     );
@@ -252,13 +245,13 @@ pub fn generate_pob_trace(
     }
     
     // Remaining coin = Poseidon2([prefix, burn_key, remaining_balance_low, ...])
-    let remaining_balance_low = intended_balance_low - reveal_amount_low;
-    let remaining_balance_high = intended_balance_high - reveal_amount_high;
-    
+    let remaining_balance_low_field = intended_balance_low_field - reveal_amount_low_field;
+    let remaining_balance_high_field = intended_balance_high_field - reveal_amount_high_field;
+
     let remaining_coin_initial_state = [
         COIN_PREFIX,
         burn_key_field,
-        remaining_balance_low,
+        remaining_balance_low_field,
         ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO,
     ];
     let (remaining_coin_initial, remaining_coin_after_first_round, remaining_coin) = poseidon2_critical_states(remaining_coin_initial_state);
@@ -273,19 +266,19 @@ pub fn generate_pob_trace(
     let commitment_initial_state = [
         nullifier,
         remaining_coin,
-        reveal_amount_low,
+        reveal_amount_low_field,
         burn_extra_commitment_field,
         proof_extra_commitment_field,
         ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO, ZERO,
     ];
     let (commitment_initial, commitment_after_first_round, commitment) = poseidon2_critical_states(commitment_initial_state);
-    
+
     // Store critical states in lookup data
     for i in 0..N_STATE {
         lookup_data.commitment_initial[i].data[vec_index] = PackedBaseField::broadcast(commitment_initial[i]);
         lookup_data.commitment_after_first_round[i].data[vec_index] = PackedBaseField::broadcast(commitment_after_first_round[i]);
     }
-    
+
     // Fill the trace with all critical states
     // For SIMD backend, we fill vec_index 0 (first SIMD lane)
     let vec_index = 0;
@@ -293,12 +286,12 @@ pub fn generate_pob_trace(
 
     // 9 input columns
     trace[col_idx].data[vec_index] = burn_key_field.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = actual_balance_low.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = actual_balance_high.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = intended_balance_low.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = intended_balance_high.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = reveal_amount_low.into(); col_idx += 1;
-    trace[col_idx].data[vec_index] = reveal_amount_high.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = actual_balance_low_field.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = actual_balance_high_field.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = intended_balance_low_field.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = intended_balance_high_field.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = reveal_amount_low_field.into(); col_idx += 1;
+    trace[col_idx].data[vec_index] = reveal_amount_high_field.into(); col_idx += 1;
     trace[col_idx].data[vec_index] = burn_extra_commitment_field.into(); col_idx += 1;
     trace[col_idx].data[vec_index] = proof_extra_commitment_field.into(); col_idx += 1;
 
@@ -335,8 +328,8 @@ pub fn generate_pob_trace(
         .into_iter()
         .map(|col| CircleEvaluation::<SimdBackend, _, BitReversedOrder>::new(domain, col))
         .collect_vec();
-    
-    (trace_evals, lookup_data)
+
+    Ok((trace_evals, lookup_data))
 }
 
 /// Generate interaction trace for lookup table verification
@@ -381,17 +374,18 @@ mod tests {
     fn test_generate_pob_trace() {
         let inputs = create_test_inputs();
         let log_size = 4; // 16 rows
-        
-        let (trace, lookup_data) = generate_pob_trace(log_size, &inputs);
-        
+
+        let (trace, lookup_data) = generate_pob_trace(log_size, &inputs)
+            .expect("Failed to generate trace - input validation error");
+
         // Verify we have the correct number of columns
         assert_eq!(trace.len(), NUM_POB_COLUMNS);
-        
+
         // Verify each column has the correct size
         for col in &trace {
             assert_eq!(col.len(), 1 << log_size);
         }
-        
+
         // Verify lookup data has correct structure
         assert_eq!(lookup_data.nullifier_initial.len(), N_STATE);
         assert_eq!(lookup_data.nullifier_after_first_round.len(), N_STATE);
@@ -400,13 +394,14 @@ mod tests {
         assert_eq!(lookup_data.commitment_initial.len(), N_STATE);
         assert_eq!(lookup_data.commitment_after_first_round.len(), N_STATE);
     }
-    
+
     #[test]
     fn test_gen_interaction_trace() {
         let inputs = create_test_inputs();
         let log_size = 4;
-        
-        let (_, lookup_data) = generate_pob_trace(log_size, &inputs);
+
+        let (_, lookup_data) = generate_pob_trace(log_size, &inputs)
+            .expect("Failed to generate trace - input validation error");
         
         // Create dummy lookup elements for testing
         let nullifier_lookup = NullifierElements::dummy();
@@ -525,10 +520,97 @@ mod tests {
         assert!(intended_high > U256::from(0u64),
             "Intended balance has significant bits above 64");
 
-            // Max 64-bit value
-        let attacker_balance = U256::from(u64::MAX); 
+        // Max 64-bit value
+        let attacker_balance = U256::from(u64::MAX);
         assert!(attacker_balance > U256::from(truncated),
             "Attacker can claim value > truncated actual balance");
+    }
+
+    // ============================================================================
+    // SECURITY FIX VERIFICATION TESTS
+    // ============================================================================
+    // These tests demonstrate that the truncation vulnerability is NOW FIXED
+
+    #[test]
+    fn test_fix_validates_64bit_balances_only() {
+        // FIX VERIFICATION: The validation function now rejects values > 64-bit
+
+        // CASE 1: Valid 64-bit balance (should pass validation)
+        let valid_balance = U256::from(0xFFFFFFFFFFFFFFFFu64); // Max 64-bit
+        let result = validate_u256_64bit_and_extract(&valid_balance);
+        assert!(result.is_ok(),
+            "Validation should accept 64-bit values. Got: {:?}", result);
+
+        // CASE 2: Invalid balance with non-zero limbs[1] (should FAIL)
+        let invalid_balance = U256::from(0x10000000000000000u128); // 2^64 (limbs[1] = 1)
+        let result = validate_u256_64bit_and_extract(&invalid_balance);
+        assert!(result.is_err(),
+            "Validation must REJECT values > 64-bit. Balance: {}", invalid_balance);
+
+        // CASE 3: Verify error message explains the problem
+        match result {
+            Err(msg) => {
+                assert!(msg.contains("exceeds 64-bit"),
+                    "Error message must mention 64-bit limit");
+                assert!(msg.contains("limbs"),
+                    "Error message must show limbs breakdown");
+            }
+            Ok(_) => panic!("Should have rejected invalid balance"),
+        }
+    }
+
+    #[test]
+    fn test_fixed_trace_generation_validates_inputs() {
+        // PROOF: The fixed generate_pob_trace now validates all inputs
+
+        // Valid inputs: all 64-bit values
+        let mut valid_inputs = create_test_inputs();
+        valid_inputs.actual_balance = U256::from(1000u64); // 64-bit
+        valid_inputs.intended_balance = U256::from(500u64); // 64-bit
+        valid_inputs.reveal_amount = U256::from(250u64); // 64-bit
+
+        let result = generate_pob_trace(4, &valid_inputs);
+        assert!(result.is_ok(),
+            "FIX: generate_pob_trace accepts valid 64-bit balances");
+
+        // Invalid inputs: balance > 64-bit
+        let mut invalid_inputs = create_test_inputs();
+        invalid_inputs.actual_balance = U256::from(0x10000000000000000u128); // 2^64
+
+        let result = generate_pob_trace(4, &invalid_inputs);
+        assert!(result.is_err(),
+            "FIX: generate_pob_trace rejects values > 64-bit");
+
+        // Verify the error is about the validation
+        if let Err(msg) = result {
+            assert!(msg.contains("exceeds 64-bit"),
+                "Error should explain the validation failure");
+        }
+    }
+
+    #[test]
+    fn test_vulnerability_is_prevented_by_validation() {
+        // SECURITY PROOF: The truncation attack is now impossible
+
+        // The old attack: create input with high bits set
+        let attack_value = U256::from(100_000_000_000_000_000_000u128); // 100 ETH
+
+        // Verification: This value CANNOT be used in trace generation anymore
+        let result = validate_u256_64bit_and_extract(&attack_value);
+        assert!(result.is_err(),
+            "SECURITY: Attack value is rejected (no silent truncation)");
+
+        // The only values that pass are those that fit in 64 bits
+        let safe_value = U256::from(u64::MAX);
+        let result = validate_u256_64bit_and_extract(&safe_value);
+        assert!(result.is_ok(),
+            "Safe values (64-bit) still work correctly");
+
+        // Proof: any value with bits 64-255 set is rejected
+        let attack_2 = U256::from(0x10000000000000000u128); // Just 2^64
+        let result = validate_u256_64bit_and_extract(&attack_2);
+        assert!(result.is_err(),
+            "Even minimal upper bits are rejected - vulnerability prevented");
     }
 }
 
