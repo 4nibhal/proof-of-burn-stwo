@@ -19,7 +19,8 @@ fn main() {
     };
     
     let log_size = 4;
-    let (trace, lookup_data) = generate_pob_trace(log_size, &inputs);
+    let (trace, lookup_data) = generate_pob_trace(log_size, &inputs)
+        .expect("Trace generation failed");
     
     println!("Trace columns: {}", trace.len());
     println!("Lookup data nullifier initial[0]: {:?}", lookup_data.nullifier_initial[0].data[0]);

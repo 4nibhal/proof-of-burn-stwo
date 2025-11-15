@@ -54,7 +54,8 @@ fn test_pob_prove_and_verify_basic() {
             // Add debugging to see what constraints fail
             use proof_of_burn_stwo::circuits::proof_of_burn_air::*;
             use proof_of_burn_stwo::utils::poseidon2_stwo::*;
-            let (trace, lookup_data) = generate_pob_trace(log_n_rows, &inputs);
+            let (trace, lookup_data) = generate_pob_trace(log_n_rows, &inputs)
+                .unwrap_or_else(|e| panic!("Trace generation failed with validation: {}", e));
             println!("Trace columns: {}", trace.len());
 
             // Check arithmetic constraints manually
@@ -368,7 +369,8 @@ fn test_pob_lookup_tables_integration() {
     println!("Testing lookup tables integration...");
     
     // Generate trace and lookup data
-    let (trace, lookup_data) = generate_pob_trace(log_n_rows, &inputs);
+    let (trace, lookup_data) = generate_pob_trace(log_n_rows, &inputs)
+        .expect("Trace generation failed - input validation error");
     
     // Verify trace structure
     assert_eq!(trace.len(), 108, "Trace should have 108 columns (9 inputs + 99 for Poseidon states)");
