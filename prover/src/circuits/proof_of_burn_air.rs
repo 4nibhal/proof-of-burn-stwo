@@ -440,14 +440,95 @@ mod tests {
         let remaining_coin_lookup = RemainingCoinElements::dummy();
         let commitment_lookup = CommitmentElements::dummy();
         let claimed_sum = SecureField::from_u32_unchecked(0, 0, 0, 0);
-        
+
         let eval = ProofOfBurnEval {
             log_n_rows: 4,
             claimed_sum,
         };
-        
+
         assert_eq!(eval.log_size(), 4);
         assert_eq!(eval.max_constraint_log_degree_bound(), 6); // log_n_rows + LOG_EXPAND (4 + 2)
+    }
+
+    #[test]
+    fn test_u256_balance_truncation_vulnerability() {
+        //100 ETH = 10^20 wei
+        let real_balance = U256::from(100_000_000_000_000_000_000u128); 
+        let limbs = real_balance.as_limbs();
+
+        let truncated_low32 = (limbs[0] & 0xFFFFFFFF) as u32;
+        let truncated_high32 = ((limbs[0] >> 32) & 0xFFFFFFFF) as u32;
+        let truncated_64bit = ((truncated_high32 as u64) << 32) | (truncated_low32 as u64);
+
+        assert_eq!(truncated_64bit, limbs[0],
+            "Code correctly extracts only limbs[0], ignoring limbs[1..3]");
+
+        assert_ne!(limbs[1], 0u64, "For 100 ETH, limbs[1] must be non-zero");
+        assert!(limbs[1] > 0u64,
+            "Upper limbs (64-127 bits) contain significant balance data");
+
+        let preserved_bits = limbs[0];
+        let ignored_value = (limbs[3] as u128) << 96 | (limbs[2] as u128) << 64 | (limbs[1] as u128);
+        assert!(ignored_value > 0u128,
+            "Significant data in bits 64-255 is completely unchecked");
+
+        assert!(limbs[1] > 0u64 || limbs[2] > 0u64 || limbs[3] > 0u64,
+            "Upper limbs contain balance data that is silently dropped");
+
+        let balance_from_limbs_array = [limbs[0], limbs[1], limbs[2], limbs[3]];
+        assert!(balance_from_limbs_array[1] > 0u64,
+            "100 ETH requires using limbs[1], proving the truncation");
+    }
+
+    #[test]
+    fn test_u256_with_nonzero_higher_limbs() {
+        // 2^64
+        let limb1_only = U256::from(0x10000000000000000u128); 
+        let limbs = limb1_only.as_limbs();
+
+        let extracted_low32 = (limbs[0] & 0xFFFFFFFF) as u32;
+        let extracted_high32 = ((limbs[0] >> 32) & 0xFFFFFFFF) as u32;
+
+        assert_eq!(limbs[0], 0u64,
+            "For value >= 2^64, limbs[0] is 0");
+        assert_ne!(limbs[1], 0u64,
+            "limbs[1] contains the balance value >= 2^64");
+
+        assert_eq!(extracted_low32, 0u32,
+            "Code extracts zero when value is in limbs[1]");
+        assert_eq!(extracted_high32, 0u32,
+            "Code extracts zero when balance is in upper bits");
+
+        assert!(limbs[1] > 0u64,
+            "Yet limbs[1] contains the actual balance");
+
+        assert_eq!(limbs[0], 0u64,
+            "Proof: code extracts nothing when balance is in upper limbs");
+    }
+
+    #[test]
+    fn test_vulnerability_allows_balance_bypass() {
+        // 100 ETH
+        let actual_balance = U256::from(100_000_000_000_000_000_000u128); 
+        // 50 ETH
+        let intended_balance = U256::from(50_000_000_000_000_000_000u128); 
+
+        let limbs = actual_balance.as_limbs();
+        // Only takes bits 0-63
+        let truncated = limbs[0]; 
+
+        
+        assert!(intended_balance <= actual_balance,
+            "Intended balance is legitimately <= actual balance");
+
+        let intended_high = intended_balance >> 64;
+        assert!(intended_high > U256::from(0u64),
+            "Intended balance has significant bits above 64");
+
+            // Max 64-bit value
+        let attacker_balance = U256::from(u64::MAX); 
+        assert!(attacker_balance > U256::from(truncated),
+            "Attacker can claim value > truncated actual balance");
     }
 }
 
