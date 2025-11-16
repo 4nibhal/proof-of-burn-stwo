@@ -118,10 +118,10 @@ impl SpendCircuit {
     
     /// Verify the circuit constraints are satisfied
     pub fn verify(&self) -> Result<(), SpendError> {
-        let outputs = self.compute_outputs();
-        
-        // All constraints are satisfied by construction in compute_outputs
-        // This verifies that the computation completed successfully
+        // Calling compute_outputs validates all circuit constraints internally.
+        // If any constraint fails, it will panic (as designed).
+        // The outputs are not needed for verification, just the execution.
+        let _outputs = self.compute_outputs();
         
         Ok(())
     }

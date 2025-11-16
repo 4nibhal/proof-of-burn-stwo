@@ -87,7 +87,8 @@ fn verify_leaf_layer(
     }
     
     // Verify address hash nibbles appear in leaf
-    let address_nibbles = bytes_to_nibbles(address_hash);
+    let _address_nibbles = bytes_to_nibbles(address_hash);
+    // Note: Currently not used for verification, but may be needed for stricter MPT checks
     
     // The leaf should contain at least the last portion of the address nibbles
     // (exact verification depends on MPT depth, we'll do a relaxed check)

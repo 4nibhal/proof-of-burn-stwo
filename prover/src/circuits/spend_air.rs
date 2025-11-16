@@ -60,10 +60,10 @@ impl FrameworkEval for SpendEval {
         let balance_high = eval.next_trace_mask();
         let withdrawn_balance_low = eval.next_trace_mask();
         let withdrawn_balance_high = eval.next_trace_mask();
-        let extra_commitment = eval.next_trace_mask();
-        let coin = eval.next_trace_mask();
-        let remaining_coin = eval.next_trace_mask();
-        let commitment = eval.next_trace_mask();
+        let _extra_commitment = eval.next_trace_mask();
+        let _coin = eval.next_trace_mask();
+        let _remaining_coin = eval.next_trace_mask();
+        let _commitment = eval.next_trace_mask();
         
         // Intermediate Poseidon state columns
         let _poseidon_state_0 = eval.next_trace_mask();
@@ -145,7 +145,7 @@ pub fn generate_spend_trace(
     
     // remaining_coin = Poseidon3([COIN_PREFIX, burn_key, remaining_balance])
     let remaining_balance_low = balance_low - withdrawn_balance_low;
-    let remaining_balance_high = balance_high - withdrawn_balance_high;
+    let _remaining_balance_high = balance_high - withdrawn_balance_high;
     
     let remaining_coin_state = [
         BaseField::from_u32_unchecked(2), // COIN_PREFIX

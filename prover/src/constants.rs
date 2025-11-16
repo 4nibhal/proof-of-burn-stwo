@@ -5,8 +5,9 @@
 use crate::field::M31;
 
 /// Base Poseidon prefix derived from keccak256("EIP-7503") mod P
-/// Original value for BN254 field: 5265656504298861414514317065875120428884240036965045859626767452974705356670
-/// For M31 field (2^31 - 1), we need to reduce this value
+/// Original Poseidon prefix from BN254 field (for reference/documentation)
+/// Not used in M31 implementation - we use reduced numeric value instead (see POSEIDON_PREFIX)
+#[allow(dead_code)]
 const POSEIDON_PREFIX_STR: &str = "5265656504298861414514317065875120428884240036965045859626767452974705356670";
 
 /// M31 field prime: 2^31 - 1 = 2147483647

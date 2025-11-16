@@ -18,7 +18,8 @@ use stwo_constraint_framework::TraceLocationAllocator;
 
 use crate::circuits::proof_of_burn::ProofOfBurnInputs;
 use crate::circuits::proof_of_burn_air::{
-    generate_pob_trace, ProofOfBurnComponent, ProofOfBurnEval,
+    generate_pob_trace, gen_interaction_trace, ProofOfBurnComponent, ProofOfBurnEval,
+    NullifierElements, RemainingCoinElements, CommitmentElements,
 };
 use crate::circuits::spend::SpendInputs;
 use crate::circuits::spend_air::{generate_spend_trace, SpendComponent, SpendEval};
@@ -112,14 +113,34 @@ pub fn prove_proof_of_burn(
     tree_builder.extend_evals(trace);
     tree_builder.commit(channel);
     
-    // === Phase 7: Create component AFTER commits ===
+    // === Phase 5: Generate lookup elements (random challenges from verifier) ===
+    let nullifier_lookup = NullifierElements::draw(channel);
+    let remaining_coin_lookup = RemainingCoinElements::draw(channel);
+    let commitment_lookup = CommitmentElements::draw(channel);
+    
+    // === Phase 6: Generate and commit interaction trace (logup for Poseidon2 verification) ===
+    let (interaction_trace, claimed_sum) = gen_interaction_trace(
+        log_n_rows,
+        lookup_data,
+        &nullifier_lookup,
+        &remaining_coin_lookup,
+        &commitment_lookup,
+    );
+    let mut tree_builder = commitment_scheme.tree_builder();
+    tree_builder.extend_evals(interaction_trace);
+    tree_builder.commit(channel);
+    
+    // === Phase 7: Create component with claimed sum and lookup elements ===
     let component = ProofOfBurnComponent::new(
         &mut TraceLocationAllocator::default(),
         ProofOfBurnEval {
             log_n_rows,
-            claimed_sum: stwo_prover::core::fields::qm31::SecureField::from_u32_unchecked(0, 0, 0, 0),
+            nullifier_lookup,
+            remaining_coin_lookup,
+            commitment_lookup,
+            claimed_sum,
         },
-        stwo_prover::core::fields::qm31::SecureField::from_u32_unchecked(0, 0, 0, 0),
+        claimed_sum,
     );
     
     // === Phase 8: Generate the STARK proof ===
@@ -155,6 +176,14 @@ pub fn verify_proof_of_burn(
     
     // Main trace
     commitment_scheme.commit(proof.commitments[1], &sizes[1], channel);
+    
+    // Draw lookup elements (must match prover's order)
+    let _nullifier_lookup = NullifierElements::draw(channel);
+    let _remaining_coin_lookup = RemainingCoinElements::draw(channel);
+    let _commitment_lookup = CommitmentElements::draw(channel);
+    
+    // Interaction trace
+    commitment_scheme.commit(proof.commitments[2], &sizes[2], channel);
     
     // Verify the proof
     verify(&[component], channel, &mut commitment_scheme, proof)

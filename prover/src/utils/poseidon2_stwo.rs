@@ -12,12 +12,12 @@ use stwo_prover::core::fields::m31::BaseField;
 // State size: t = 16
 // Alpha (S-box): 5
 pub const N_STATE: usize = 16;
-const N_PARTIAL_ROUNDS: usize = 26;  // Optimized for M31
-const N_HALF_FULL_ROUNDS: usize = 4; // Total R_F = 8
+pub const N_PARTIAL_ROUNDS: usize = 26;  // Optimized for M31
+pub const N_HALF_FULL_ROUNDS: usize = 4; // Total R_F = 8
 
 // External round constants (8 rounds, 16 constants each)
 // Generated using Grain LFSR as specified in Poseidon2 paper
-const EXTERNAL_ROUND_CONSTS: [[BaseField; N_STATE]; 2 * N_HALF_FULL_ROUNDS] = [
+pub const EXTERNAL_ROUND_CONSTS: [[BaseField; N_STATE]; 2 * N_HALF_FULL_ROUNDS] = [
     [BaseField::from_u32_unchecked(1323103696), BaseField::from_u32_unchecked(32820862), BaseField::from_u32_unchecked(1980729053), BaseField::from_u32_unchecked(317622338), BaseField::from_u32_unchecked(50263984), BaseField::from_u32_unchecked(427303566), BaseField::from_u32_unchecked(476470815), BaseField::from_u32_unchecked(1873216103), BaseField::from_u32_unchecked(1013492029), BaseField::from_u32_unchecked(1876243821), BaseField::from_u32_unchecked(1423021976), BaseField::from_u32_unchecked(1034880506), BaseField::from_u32_unchecked(255516447), BaseField::from_u32_unchecked(1751710500), BaseField::from_u32_unchecked(1772458188), BaseField::from_u32_unchecked(1905707724)],
     [BaseField::from_u32_unchecked(2146357039), BaseField::from_u32_unchecked(300477280), BaseField::from_u32_unchecked(1303317487), BaseField::from_u32_unchecked(1896371959), BaseField::from_u32_unchecked(1077911909), BaseField::from_u32_unchecked(1623307068), BaseField::from_u32_unchecked(1716928924), BaseField::from_u32_unchecked(1899262763), BaseField::from_u32_unchecked(561896200), BaseField::from_u32_unchecked(2147059615), BaseField::from_u32_unchecked(262690381), BaseField::from_u32_unchecked(2144164168), BaseField::from_u32_unchecked(1245079228), BaseField::from_u32_unchecked(715189338), BaseField::from_u32_unchecked(588134996), BaseField::from_u32_unchecked(1875961624)],
     [BaseField::from_u32_unchecked(727635773), BaseField::from_u32_unchecked(1044882765), BaseField::from_u32_unchecked(1256399791), BaseField::from_u32_unchecked(170160872), BaseField::from_u32_unchecked(776522156), BaseField::from_u32_unchecked(1947778522), BaseField::from_u32_unchecked(1540706240), BaseField::from_u32_unchecked(1368992253), BaseField::from_u32_unchecked(412370089), BaseField::from_u32_unchecked(1562388559), BaseField::from_u32_unchecked(1199766382), BaseField::from_u32_unchecked(257896456), BaseField::from_u32_unchecked(931242721), BaseField::from_u32_unchecked(266356162), BaseField::from_u32_unchecked(1661329514), BaseField::from_u32_unchecked(1750311239)],
@@ -29,7 +29,7 @@ const EXTERNAL_ROUND_CONSTS: [[BaseField; N_STATE]; 2 * N_HALF_FULL_ROUNDS] = [
 ];
 
 // Internal round constants (26 partial rounds)
-const INTERNAL_ROUND_CONSTS: [BaseField; N_PARTIAL_ROUNDS] = [
+pub const INTERNAL_ROUND_CONSTS: [BaseField; N_PARTIAL_ROUNDS] = [
     BaseField::from_u32_unchecked(2059409277),
     BaseField::from_u32_unchecked(1595326017),
     BaseField::from_u32_unchecked(729019563),
@@ -417,5 +417,71 @@ mod tests {
             "Different domain IDs ensure different outputs"
         );
     }
+}
+
+/// Structure to hold all intermediate states for complete round-by-round verification
+pub struct Poseidon2FullTrace {
+    pub initial_state: [BaseField; N_STATE],
+    /// States after sbox in first 4 full rounds (4 rounds × 16 elements)
+    pub first_full_rounds: Vec<[BaseField; N_STATE]>,
+    /// States after sbox in partial rounds (26 rounds × 1 element - only first)
+    pub partial_rounds: Vec<BaseField>,
+    /// States after sbox in last 4 full rounds (4 rounds × 16 elements)
+    pub last_full_rounds: Vec<[BaseField; N_STATE]>,
+    pub final_hash: BaseField,
+}
+
+/// Compute complete Poseidon2 trace with ALL intermediate states for AIR constraints
+/// This function generates every intermediate value needed for round-by-round verification
+/// Following the pattern from stwo/examples/poseidon/mod.rs gen_trace()
+pub fn poseidon2_full_trace(input_state: [BaseField; N_STATE]) -> Poseidon2FullTrace {
+    let mut state = input_state;
+    let mut trace = Poseidon2FullTrace {
+        initial_state: input_state,
+        first_full_rounds: Vec::with_capacity(N_HALF_FULL_ROUNDS),
+        partial_rounds: Vec::with_capacity(N_PARTIAL_ROUNDS),
+        last_full_rounds: Vec::with_capacity(N_HALF_FULL_ROUNDS),
+        final_hash: BaseField::from_u32_unchecked(0),
+    };
+
+    // First 4 full rounds
+    (0..N_HALF_FULL_ROUNDS).for_each(|round| {
+        // Add round constants
+        (0..N_STATE).for_each(|i| {
+            state[i] += EXTERNAL_ROUND_CONSTS[round][i];
+        });
+        // Apply external matrix
+        apply_external_round_matrix(&mut state);
+        // Apply S-box
+        state = std::array::from_fn(|i| pow5(state[i]));
+        // Store state after sbox
+        trace.first_full_rounds.push(state);
+    });
+
+    // Partial rounds (26 rounds)
+    (0..N_PARTIAL_ROUNDS).for_each(|round| {
+        state[0] += INTERNAL_ROUND_CONSTS[round];
+        apply_internal_round_matrix(&mut state);
+        state[0] = pow5(state[0]);
+        // Store only first element after sbox
+        trace.partial_rounds.push(state[0]);
+    });
+
+    // Last 4 full rounds
+    (0..N_HALF_FULL_ROUNDS).for_each(|round| {
+        // Add round constants
+        (0..N_STATE).for_each(|i| {
+            state[i] += EXTERNAL_ROUND_CONSTS[round + N_HALF_FULL_ROUNDS][i];
+        });
+        // Apply external matrix
+        apply_external_round_matrix(&mut state);
+        // Apply S-box
+        state = std::array::from_fn(|i| pow5(state[i]));
+        // Store state after sbox
+        trace.last_full_rounds.push(state);
+    });
+
+    trace.final_hash = state[0];
+    trace
 }
 

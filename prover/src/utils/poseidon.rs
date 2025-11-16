@@ -8,6 +8,8 @@ use crate::field::M31;
 // These are adapted from the standard Poseidon parameters
 // Original WORM uses parameters for BN254, we use parameters for M31
 
+// Legacy constant for reference (not used in current implementation)
+#[allow(dead_code)]
 const T: usize = 5; // State size (up to 4 inputs + 1 capacity)
 const ROUNDS_F: usize = 8; // Full rounds
 const ROUNDS_P_2: usize = 57; // Partial rounds for t=3 (2 inputs)
