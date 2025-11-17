@@ -198,7 +198,7 @@ impl ProofOfBurnCircuit {
         
         // Constraint: Verify PoW (line 211)
         let pow_zero_bytes = POW_MINIMUM_ZERO_BYTES + self.inputs.byte_security_relax as usize;
-        
+
         if !verify_pow(
             self.inputs.burn_key,
             self.inputs.reveal_amount,
@@ -259,14 +259,21 @@ fn compute_pob_commitment(
         block_root[3],
     ]));
     
-    // Combine all commitments
-    use crate::utils::poseidon::poseidon_hash;
-    
-    poseidon_hash(&[
+    // Combine all commitments using poseidon functions
+    // Since poseidon_hash only supports up to 4 inputs, we use a combination
+    use crate::utils::poseidon::{poseidon3, poseidon4};
+
+    // First hash 4 inputs
+    let hash1 = poseidon4([
         block_root_m31,
         nullifier,
         remaining_coin,
         reveal_amount_m31,
+    ]);
+
+    // Then hash the result with the remaining 2 inputs
+    poseidon3([
+        hash1,
         burn_extra_commitment,
         proof_extra_commitment,
     ])
