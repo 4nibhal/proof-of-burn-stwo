@@ -117,10 +117,15 @@ pub fn poseidon4(inputs: [M31; 4]) -> M31 {
 
 /// Convert U256 to M31 by reducing modulo M31 prime
 /// Used when we need to hash large numbers like balances
+/// 
+/// Note: This function only uses the lowest 32 bits of the U256 value.
+/// For full validation that the value fits in 64 bits, use validate_u256_64bit_and_extract
+/// before calling this function.
 pub fn u256_to_m31(value: alloy_primitives::U256) -> M31 {
     // Get the lowest 32 bits and reduce modulo M31 prime
+    // M31::new() automatically reduces modulo the prime, so this is safe
     let low = value.as_limbs()[0] as u32;
-    M31::new(low % crate::constants::M31_PRIME)
+    M31::new(low)
 }
 
 /// Convert U256 to multiple M31 elements for better representation
