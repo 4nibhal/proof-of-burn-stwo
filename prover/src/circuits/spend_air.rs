@@ -86,6 +86,8 @@ impl FrameworkEval for SpendEval {
         // === CONSTRAINT 3: Remaining coin computation ===
         // remaining_balance = balance - withdrawn_balance
         // remaining_coin = Poseidon3([COIN_PREFIX, burn_key, remaining_balance])
+        // BaseField subtraction handles underflow correctly with modular arithmetic,
+        // but we validate in trace generation that withdrawn_balance <= balance
         let _remaining_balance_low = balance_low.clone() - withdrawn_balance_low.clone();
         let _remaining_balance_high = balance_high.clone() - withdrawn_balance_high.clone();
         
@@ -113,23 +115,48 @@ pub fn generate_spend_trace(
         .map(|_| Col::<SimdBackend, BaseField>::zeros(size))
         .collect_vec();
     
-    // Convert inputs to BaseField
-    let burn_key_field = BaseField::from_u32_unchecked(inputs.burn_key.0);
-    let balance_low = BaseField::from_u32_unchecked(
-        (inputs.balance.as_limbs()[0] & 0xFFFFFFFF) as u32
-    );
-    let balance_high = BaseField::from_u32_unchecked(
-        ((inputs.balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32
-    );
-    let withdrawn_balance_low = BaseField::from_u32_unchecked(
-        (inputs.withdrawn_balance.as_limbs()[0] & 0xFFFFFFFF) as u32
-    );
-    let withdrawn_balance_high = BaseField::from_u32_unchecked(
-        ((inputs.withdrawn_balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32
-    );
-    let extra_commitment_field = BaseField::from_u32_unchecked(
-        inputs.extra_commitment.0
-    );
+    // Validate M31 values are in correct range before conversion
+    use crate::constants::M31_PRIME;
+    let burn_key_val = inputs.burn_key.value();
+    if burn_key_val >= M31_PRIME {
+        panic!("burn_key value {} exceeds M31 prime {}", burn_key_val, M31_PRIME);
+    }
+    let extra_commitment_val = inputs.extra_commitment.value();
+    if extra_commitment_val >= M31_PRIME {
+        panic!("extra_commitment value {} exceeds M31 prime {}", extra_commitment_val, M31_PRIME);
+    }
+    
+    // Extract balance parts and validate
+    let balance_low_u32 = (inputs.balance.as_limbs()[0] & 0xFFFFFFFF) as u32;
+    let balance_high_u32 = ((inputs.balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32;
+    let withdrawn_balance_low_u32 = (inputs.withdrawn_balance.as_limbs()[0] & 0xFFFFFFFF) as u32;
+    let withdrawn_balance_high_u32 = ((inputs.withdrawn_balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32;
+    
+    // Validate u32 values are in correct range for BaseField
+    if balance_low_u32 >= M31_PRIME || balance_high_u32 >= M31_PRIME {
+        panic!("Balance values exceed M31 prime: low={}, high={}", balance_low_u32, balance_high_u32);
+    }
+    if withdrawn_balance_low_u32 >= M31_PRIME || withdrawn_balance_high_u32 >= M31_PRIME {
+        panic!("Withdrawn balance values exceed M31 prime: low={}, high={}", withdrawn_balance_low_u32, withdrawn_balance_high_u32);
+    }
+    
+    // Validate that withdrawn_balance <= balance before subtraction
+    let withdrawn_gt_balance = (withdrawn_balance_high_u32 > balance_high_u32) ||
+        (withdrawn_balance_high_u32 == balance_high_u32 && withdrawn_balance_low_u32 > balance_low_u32);
+    if withdrawn_gt_balance {
+        panic!(
+            "Withdrawn balance exceeds balance: withdrawn_low={}, withdrawn_high={}, balance_low={}, balance_high={}",
+            withdrawn_balance_low_u32, withdrawn_balance_high_u32, balance_low_u32, balance_high_u32
+        );
+    }
+    
+    // Now safe to use from_u32_unchecked since we've validated the range
+    let burn_key_field = BaseField::from_u32_unchecked(burn_key_val);
+    let balance_low = BaseField::from_u32_unchecked(balance_low_u32);
+    let balance_high = BaseField::from_u32_unchecked(balance_high_u32);
+    let withdrawn_balance_low = BaseField::from_u32_unchecked(withdrawn_balance_low_u32);
+    let withdrawn_balance_high = BaseField::from_u32_unchecked(withdrawn_balance_high_u32);
+    let extra_commitment_field = BaseField::from_u32_unchecked(extra_commitment_val);
     
     // Compute derived values using Poseidon2
     
@@ -144,6 +171,8 @@ pub fn generate_spend_trace(
     let coin = coin_output[0];
     
     // remaining_coin = Poseidon3([COIN_PREFIX, burn_key, remaining_balance])
+    // Safe to subtract now - we validated withdrawn_balance <= balance above
+    // BaseField subtraction handles underflow correctly with modular arithmetic
     let remaining_balance_low = balance_low - withdrawn_balance_low;
     let remaining_balance_high = balance_high - withdrawn_balance_high;
     
