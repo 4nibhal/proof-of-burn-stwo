@@ -10,6 +10,8 @@
 
 This is a fork of the WORM protocol that replaces Groth16 (which requires a trusted setup) with Circle STARKs using StarkWare's stwo prover. The implementation maintains all the logic of WORM while providing transparency through STARK proofs.
 
+The CLI generates **commitments-only proofs** that contain only the essential cryptographic commitments needed for on-chain verification, following STWO's minimal proof design where FRI verification is handled internally.
+
 ### Key Features
 
 - ✅ **No Trusted Setup**: Uses transparent Circle STARKs
@@ -32,6 +34,7 @@ This is a fork of the WORM protocol that replaces Groth16 (which requires a trus
 5. **MPT Verification**: Full Merkle Patricia Trie implementation
 6. **RLP Encoding**: Production-grade using alloy
 7. **Critical State Verification**: Verifies Poseidon round transitions in AIR
+8. **Commitments-Only Verification**: Uses STWO's minimal proof design where only final commitments are verified on-chain, with FRI handled internally
 
 ### ⚠️ What Needs Work (Before Mainnet)
 
@@ -101,6 +104,53 @@ cargo test
 cargo test poseidon2
 cargo test proof_of_burn
 cargo test spend
+```
+
+### CLI Usage
+
+The `pob-prover` CLI tool generates STWO proofs for Proof of Burn operations.
+
+#### Generate Burn Proof
+
+```bash
+# Build the CLI
+cargo build --release
+./target/release/pob-prover generate-burn --input test_input.json --output proof.json
+```
+
+**Input Format** (`test_input.json`):
+```json
+{
+  "burn_key": "0x1234567890abcdef...",
+  "intended_balance": 1000000000000000000,
+  "block_number": 12345678,
+  "block_hash": "0xabcdef1234567890...",
+  "state_root": "0xfedcba0987654321...",
+  "account_proof": ["0x...", "0x..."],
+  "address": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e",
+  "address_hash": "0x1234567890abcdef...",
+  "nonce": 1,
+  "balance": 1000000000000000000,
+  "storage_hash": "0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421",
+  "code_hash": "0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470"
+}
+```
+
+**Output Format** (`proof.json`):
+```json
+{
+  "trace_commitment": "0x1234567890abcdef...",
+  "composition_commitment": "0xabcdef1234567890...",
+  "proof_id": "0xfedcba0987654321..."
+}
+```
+
+The output contains only the essential commitment data needed for on-chain verification, following STWO's minimal proof design.
+
+#### Verify Proof Locally
+
+```bash
+./target/release/pob-prover verify --proof proof.json --type burn
 ```
 
 ---
