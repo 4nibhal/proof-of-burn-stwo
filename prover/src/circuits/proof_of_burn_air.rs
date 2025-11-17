@@ -153,6 +153,8 @@ impl FrameworkEval for ProofOfBurnEval {
 
         // === CONSTRAINT 1: Arithmetic - Remaining balance ===
         // remaining_balance = intended_balance - reveal_amount
+        // BaseField subtraction handles underflow correctly with modular arithmetic,
+        // but we validate in trace generation that reveal_amount <= intended_balance
         let remaining_balance_low = intended_balance_low.clone() - reveal_amount_low.clone();
         let remaining_balance_high = intended_balance_high.clone() - reveal_amount_high.clone();
 
@@ -212,19 +214,44 @@ pub fn generate_pob_trace(
         commitment_after_first_round: std::array::from_fn(|_| BaseColumn::zeros(size)),
     };
 
-    let burn_key_field = BaseField::from_u32_unchecked(inputs.burn_key.0);
+    // Validate M31 values are in correct range before conversion
+    // M31 values should always be < M31_PRIME, but we validate to be safe
+    use crate::constants::M31_PRIME;
+    let burn_key_val = inputs.burn_key.value();
+    if burn_key_val >= M31_PRIME {
+        return Err(format!("burn_key value {} exceeds M31 prime {}", burn_key_val, M31_PRIME));
+    }
+    let burn_extra_val = inputs.burn_extra_commitment.value();
+    if burn_extra_val >= M31_PRIME {
+        return Err(format!("burn_extra_commitment value {} exceeds M31 prime {}", burn_extra_val, M31_PRIME));
+    }
+    let proof_extra_val = inputs.proof_extra_commitment.value();
+    if proof_extra_val >= M31_PRIME {
+        return Err(format!("proof_extra_commitment value {} exceeds M31 prime {}", proof_extra_val, M31_PRIME));
+    }
+    
+    // Validate u32 values are in correct range for BaseField
+    // BaseField uses the same M31 prime, so values must be < M31_PRIME
+    if actual_balance_low >= M31_PRIME || actual_balance_high >= M31_PRIME {
+        return Err(format!("Balance values exceed M31 prime: low={}, high={}", actual_balance_low, actual_balance_high));
+    }
+    if intended_balance_low >= M31_PRIME || intended_balance_high >= M31_PRIME {
+        return Err(format!("Intended balance values exceed M31 prime: low={}, high={}", intended_balance_low, intended_balance_high));
+    }
+    if reveal_amount_low >= M31_PRIME || reveal_amount_high >= M31_PRIME {
+        return Err(format!("Reveal amount values exceed M31 prime: low={}, high={}", reveal_amount_low, reveal_amount_high));
+    }
+    
+    // Now safe to use from_u32_unchecked since we've validated the range
+    let burn_key_field = BaseField::from_u32_unchecked(burn_key_val);
     let actual_balance_low_field = BaseField::from_u32_unchecked(actual_balance_low);
     let actual_balance_high_field = BaseField::from_u32_unchecked(actual_balance_high);
     let intended_balance_low_field = BaseField::from_u32_unchecked(intended_balance_low);
     let intended_balance_high_field = BaseField::from_u32_unchecked(intended_balance_high);
     let reveal_amount_low_field = BaseField::from_u32_unchecked(reveal_amount_low);
     let reveal_amount_high_field = BaseField::from_u32_unchecked(reveal_amount_high);
-    let burn_extra_commitment_field = BaseField::from_u32_unchecked(
-        inputs.burn_extra_commitment.0
-    );
-    let proof_extra_commitment_field = BaseField::from_u32_unchecked(
-        inputs.proof_extra_commitment.0
-    );
+    let burn_extra_commitment_field = BaseField::from_u32_unchecked(burn_extra_val);
+    let proof_extra_commitment_field = BaseField::from_u32_unchecked(proof_extra_val);
     
     // Compute derived values with critical state verification
     use crate::utils::poseidon2_stwo::poseidon2_critical_states;
@@ -245,6 +272,18 @@ pub fn generate_pob_trace(
     }
     
     // Remaining coin = Poseidon2([prefix, burn_key, remaining_balance_low, ...])
+    // Validate that reveal_amount <= intended_balance before subtraction to prevent underflow
+    // We need to check both low and high parts
+    let reveal_gt_intended = (reveal_amount_high > intended_balance_high) ||
+        (reveal_amount_high == intended_balance_high && reveal_amount_low > intended_balance_low);
+    if reveal_gt_intended {
+        return Err(format!(
+            "Reveal amount exceeds intended balance: reveal_low={}, reveal_high={}, intended_low={}, intended_high={}",
+            reveal_amount_low, reveal_amount_high, intended_balance_low, intended_balance_high
+        ));
+    }
+    
+    // Safe to subtract now - BaseField subtraction handles underflow correctly with modular arithmetic
     let remaining_balance_low_field = intended_balance_low_field - reveal_amount_low_field;
     let remaining_balance_high_field = intended_balance_high_field - reveal_amount_high_field;
 
