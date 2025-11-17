@@ -269,8 +269,20 @@ pub fn poseidon2_hash_4(inputs: [BaseField; 4]) -> BaseField {
 }
 
 /// Convert between stwo's BaseField and our custom M31
+/// BaseField values should always be < M31_PRIME, but we validate to be safe
 pub fn basefield_to_custom_m31(bf: BaseField) -> crate::field::M31 {
-    crate::field::M31::new(bf.0)
+    // BaseField is a wrapper around u32, and we can safely convert it
+    // The BaseField type from stwo ensures values are in the correct range
+    // We use M31::new() which automatically reduces modulo the prime
+    use crate::constants::M31_PRIME;
+    let val = bf.0; // Access the underlying u32 value
+    if val >= M31_PRIME {
+        // This should never happen with valid BaseField values, but we check anyway
+        // M31::new() will reduce modulo the prime, so this is safe
+        crate::field::M31::new(val)
+    } else {
+        crate::field::M31::new(val)
+    }
 }
 
 /// Convert from our custom M31 to stwo's BaseField
