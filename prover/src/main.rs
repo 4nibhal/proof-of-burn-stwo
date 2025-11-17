@@ -256,10 +256,10 @@ fn generate_burn_proof(input_path: PathBuf, output_path: PathBuf) -> anyhow::Res
     let commitment_val = outputs.commitment.value();
     
     if nullifier_val >= M31_PRIME {
-        return Err(format!("nullifier value {} exceeds M31 prime {}", nullifier_val, M31_PRIME));
+        anyhow::bail!("nullifier value {} exceeds M31 prime {}", nullifier_val, M31_PRIME);
     }
     if commitment_val >= M31_PRIME {
-        return Err(format!("commitment value {} exceeds M31 prime {}", commitment_val, M31_PRIME));
+        anyhow::bail!("commitment value {} exceeds M31 prime {}", commitment_val, M31_PRIME);
     }
     
     // Safe to convert to u64 now
