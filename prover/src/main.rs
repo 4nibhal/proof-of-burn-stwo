@@ -250,8 +250,21 @@ fn generate_burn_proof(input_path: PathBuf, output_path: PathBuf) -> anyhow::Res
     println!("  Remaining Coin: {:?}", outputs.remaining_coin);
 
     // Convert outputs to U256 for contract compatibility
-    let nullifier = alloy_primitives::U256::from(outputs.nullifier.0 as u64);
-    let commitment = alloy_primitives::U256::from(outputs.commitment.0 as u64);
+    // Validate M31 values are in correct range before accessing
+    use crate::constants::M31_PRIME;
+    let nullifier_val = outputs.nullifier.value();
+    let commitment_val = outputs.commitment.value();
+    
+    if nullifier_val >= M31_PRIME {
+        return Err(format!("nullifier value {} exceeds M31 prime {}", nullifier_val, M31_PRIME));
+    }
+    if commitment_val >= M31_PRIME {
+        return Err(format!("commitment value {} exceeds M31 prime {}", commitment_val, M31_PRIME));
+    }
+    
+    // Safe to convert to u64 now
+    let nullifier = alloy_primitives::U256::from(nullifier_val as u64);
+    let commitment = alloy_primitives::U256::from(commitment_val as u64);
 
     // Calculate block hash from block header (this is what Commitments.sol uses as blockHash)
     let block_hash = alloy_primitives::keccak256(&inputs.block_header);
