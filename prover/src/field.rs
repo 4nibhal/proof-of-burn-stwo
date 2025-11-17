@@ -83,13 +83,23 @@ impl Sub for M31 {
 
     fn sub(self, rhs: Self) -> Self::Output {
         // Subtraction in M31: (a - b) mod P
-        // Handle underflow by adding P first
-        let diff = if self.0 >= rhs.0 {
-            self.0 - rhs.0
+        // Use u64 arithmetic to prevent overflow
+        let self_u64 = self.0 as u64;
+        let rhs_u64 = rhs.0 as u64;
+        let prime_u64 = M31::PRIME as u64;
+        
+        // Compute (a - b) mod P using safe arithmetic
+        // If a < b, we add P to get the correct result
+        let diff = if self_u64 >= rhs_u64 {
+            self_u64 - rhs_u64
         } else {
-            (M31::PRIME - rhs.0) + self.0
+            // (a - b) mod P = (a + P - b) mod P
+            // Use checked arithmetic to prevent overflow
+            self_u64 + prime_u64 - rhs_u64
         };
-        M31(diff)
+        
+        // Result is guaranteed to be < 2*P, so we reduce modulo P
+        M31((diff % prime_u64) as u32)
     }
 }
 
