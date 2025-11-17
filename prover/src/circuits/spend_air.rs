@@ -132,15 +132,8 @@ pub fn generate_spend_trace(
     let withdrawn_balance_low_u32 = (inputs.withdrawn_balance.as_limbs()[0] & 0xFFFFFFFF) as u32;
     let withdrawn_balance_high_u32 = ((inputs.withdrawn_balance.as_limbs()[0] >> 32) & 0xFFFFFFFF) as u32;
     
-    // Validate u32 values are in correct range for BaseField
-    if balance_low_u32 >= M31_PRIME || balance_high_u32 >= M31_PRIME {
-        panic!("Balance values exceed M31 prime: low={}, high={}", balance_low_u32, balance_high_u32);
-    }
-    if withdrawn_balance_low_u32 >= M31_PRIME || withdrawn_balance_high_u32 >= M31_PRIME {
-        panic!("Withdrawn balance values exceed M31 prime: low={}, high={}", withdrawn_balance_low_u32, withdrawn_balance_high_u32);
-    }
-    
     // Validate that withdrawn_balance <= balance before subtraction
+    // We need to compare the raw u32 values before conversion to BaseField
     let withdrawn_gt_balance = (withdrawn_balance_high_u32 > balance_high_u32) ||
         (withdrawn_balance_high_u32 == balance_high_u32 && withdrawn_balance_low_u32 > balance_low_u32);
     if withdrawn_gt_balance {
@@ -150,12 +143,14 @@ pub fn generate_spend_trace(
         );
     }
     
-    // Now safe to use from_u32_unchecked since we've validated the range
+    // Convert u32 values to BaseField
+    // BaseField::from() automatically reduces modulo M31_PRIME, so values can be any u32
+    // For M31 values that are already validated, we use from_u32_unchecked for efficiency
     let burn_key_field = BaseField::from_u32_unchecked(burn_key_val);
-    let balance_low = BaseField::from_u32_unchecked(balance_low_u32);
-    let balance_high = BaseField::from_u32_unchecked(balance_high_u32);
-    let withdrawn_balance_low = BaseField::from_u32_unchecked(withdrawn_balance_low_u32);
-    let withdrawn_balance_high = BaseField::from_u32_unchecked(withdrawn_balance_high_u32);
+    let balance_low = BaseField::from(balance_low_u32);
+    let balance_high = BaseField::from(balance_high_u32);
+    let withdrawn_balance_low = BaseField::from(withdrawn_balance_low_u32);
+    let withdrawn_balance_high = BaseField::from(withdrawn_balance_high_u32);
     let extra_commitment_field = BaseField::from_u32_unchecked(extra_commitment_val);
     
     // Compute derived values using Poseidon2

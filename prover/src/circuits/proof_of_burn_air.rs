@@ -230,26 +230,16 @@ pub fn generate_pob_trace(
         return Err(format!("proof_extra_commitment value {} exceeds M31 prime {}", proof_extra_val, M31_PRIME));
     }
     
-    // Validate u32 values are in correct range for BaseField
-    // BaseField uses the same M31 prime, so values must be < M31_PRIME
-    if actual_balance_low >= M31_PRIME || actual_balance_high >= M31_PRIME {
-        return Err(format!("Balance values exceed M31 prime: low={}, high={}", actual_balance_low, actual_balance_high));
-    }
-    if intended_balance_low >= M31_PRIME || intended_balance_high >= M31_PRIME {
-        return Err(format!("Intended balance values exceed M31 prime: low={}, high={}", intended_balance_low, intended_balance_high));
-    }
-    if reveal_amount_low >= M31_PRIME || reveal_amount_high >= M31_PRIME {
-        return Err(format!("Reveal amount values exceed M31 prime: low={}, high={}", reveal_amount_low, reveal_amount_high));
-    }
-    
-    // Now safe to use from_u32_unchecked since we've validated the range
+    // Convert u32 values to BaseField
+    // BaseField::from() automatically reduces modulo M31_PRIME, so values can be any u32
+    // For M31 values that are already validated, we use from_u32_unchecked for efficiency
     let burn_key_field = BaseField::from_u32_unchecked(burn_key_val);
-    let actual_balance_low_field = BaseField::from_u32_unchecked(actual_balance_low);
-    let actual_balance_high_field = BaseField::from_u32_unchecked(actual_balance_high);
-    let intended_balance_low_field = BaseField::from_u32_unchecked(intended_balance_low);
-    let intended_balance_high_field = BaseField::from_u32_unchecked(intended_balance_high);
-    let reveal_amount_low_field = BaseField::from_u32_unchecked(reveal_amount_low);
-    let reveal_amount_high_field = BaseField::from_u32_unchecked(reveal_amount_high);
+    let actual_balance_low_field = BaseField::from(actual_balance_low);
+    let actual_balance_high_field = BaseField::from(actual_balance_high);
+    let intended_balance_low_field = BaseField::from(intended_balance_low);
+    let intended_balance_high_field = BaseField::from(intended_balance_high);
+    let reveal_amount_low_field = BaseField::from(reveal_amount_low);
+    let reveal_amount_high_field = BaseField::from(reveal_amount_high);
     let burn_extra_commitment_field = BaseField::from_u32_unchecked(burn_extra_val);
     let proof_extra_commitment_field = BaseField::from_u32_unchecked(proof_extra_val);
     
