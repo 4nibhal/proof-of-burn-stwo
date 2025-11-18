@@ -251,7 +251,7 @@ fn generate_burn_proof(input_path: PathBuf, output_path: PathBuf) -> anyhow::Res
 
     // Convert outputs to U256 for contract compatibility
     // Validate M31 values are in correct range before accessing
-    use crate::constants::M31_PRIME;
+    use proof_of_burn_stwo::constants::M31_PRIME;
     let nullifier_val = outputs.nullifier.value();
     let commitment_val = outputs.commitment.value();
     
